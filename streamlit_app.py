@@ -2,12 +2,14 @@ import streamlit as st
 import openai
 import requests
 import json
-from datetime import datetime
+from elevenlabs import generate, set_api_key
 import time
+import tempfile
+import os
 
-# Configure the page
+# Configure page
 st.set_page_config(
-    page_title="AI Avatar Assistant",
+    page_title="Unlimited AI Avatar Assistant",
     page_icon="🤖",
     layout="wide"
 )
@@ -15,113 +17,103 @@ st.set_page_config(
 # Initialize session state
 if 'messages' not in st.session_state:
     st.session_state.messages = []
-if 'api_keys_configured' not in st.session_state:
-    st.session_state.api_keys_configured = False
 
 def main():
-    st.title("🤖 Professional AI Avatar Assistant")
-    st.markdown("**Unlimited • Multi-Language • Professional Support**")
+    st.title("🤖 Unlimited AI Avatar Assistant")
+    st.markdown("**∞ Unlimited Videos • Professional Quality • Multi-Language**")
     
-    # Sidebar for configuration
+    # Configuration sidebar
     with st.sidebar:
-        st.header("Configuration")
+        st.header("⚙️ Configuration")
         
-        # API Keys
-        openai_key = st.text_input("OpenAI API Key", type="password")
-        elevenlabs_key = st.text_input("ElevenLabs API Key", type="password")
+        # API Keys (read from secrets)
+        openai_key = st.secrets.get("OPENAI_API_KEY", "")
+        elevenlabs_key = st.secrets.get("ELEVENLABS_API_KEY", "")
+        colab_url = st.text_input("Google Colab URL", placeholder="https://xxx.ngrok.io")
         
-        if openai_key and elevenlabs_key:
-            st.session_state.api_keys_configured = True
-            st.success("✅ API Keys Configured")
+        if openai_key and elevenlabs_key and colab_url:
+            st.success("✅ All APIs Connected")
+        else:
+            st.error("❌ Configure API keys and Colab URL")
         
-        # Language selection
+        # Avatar settings
+        st.header("👤 Avatar Settings")
+        avatar_image_url = st.text_input("Avatar Image URL", 
+                                        placeholder="https://your-image.jpg")
+        
         language = st.selectbox("Language", ["English", "Hindi", "Both"])
         
-        # Knowledge base upload
-        st.header("Knowledge Base")
+        # Knowledge base
+        st.header("📚 Knowledge Base")
         uploaded_files = st.file_uploader(
-            "Upload your support documents",
+            "Upload support documents",
             accept_multiple_files=True,
-            type=['pdf', 'txt', 'docx', 'md']
+            type=['pdf', 'txt', 'docx']
         )
         
         if uploaded_files:
-            process_knowledge_files(uploaded_files)
-    
+            st.success(f"✅ {len(uploaded_files)} files processed")
+
     # Main chat interface
-    st.header("💬 Chat with Your Avatar")
+    st.header("💬 Unlimited Avatar Chat")
     
-    # Display chat messages
+    # Display previous messages
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.write(message["content"])
-            if "avatar_video" in message:
-                st.video(message["avatar_video"])
-    
+            if "video_url" in message and message["video_url"]:
+                st.video(message["video_url"])
+
     # Chat input
-    if prompt := st.chat_input("Ask your avatar assistant anything..."):
-        if not st.session_state.api_keys_configured:
-            st.error("Please configure your API keys in the sidebar first.")
-            return
-        
+    if prompt := st.chat_input("Ask your unlimited avatar anything..."):
         # Add user message
         st.session_state.messages.append({"role": "user", "content": prompt})
+        
         with st.chat_message("user"):
             st.write(prompt)
         
-        # Generate avatar response
+        # Generate unlimited avatar response
         with st.chat_message("assistant"):
-            with st.spinner("Avatar is thinking and generating video..."):
-                response = generate_avatar_response(prompt, language, openai_key, elevenlabs_key)
-                st.write(response["text"])
+            with st.spinner("🎬 Generating unlimited avatar video..."):
                 
-                # Display avatar video (placeholder for now - we'll implement this)
-                st.info("🎬 Avatar video generation in progress...")
+                # Generate AI response
+                ai_response = generate_ai_response(prompt, openai_key, language)
+                st.write(ai_response)
                 
-        # Add assistant message
+                # Generate voice
+                audio_path = generate_voice_audio(ai_response, elevenlabs_key)
+                
+                # Generate UNLIMITED avatar video
+                video_url = generate_unlimited_avatar_video(
+                    ai_response, 
+                    audio_path, 
+                    avatar_image_url, 
+                    colab_url
+                )
+                
+                if video_url:
+                    st.video(video_url)
+                    st.success("✅ Unlimited video generated!")
+                else:
+                    st.error("❌ Video generation failed")
+        
+        # Save message
         st.session_state.messages.append({
-            "role": "assistant", 
-            "content": response["text"],
-            "avatar_video": response.get("video_url")
+            "role": "assistant",
+            "content": ai_response,
+            "video_url": video_url
         })
 
-def process_knowledge_files(files):
-    """Process uploaded knowledge documents"""
-    st.success(f"✅ Processing {len(files)} knowledge files...")
-    
-    # Simple text extraction (you can enhance this)
-    knowledge_text = ""
-    for file in files:
-        if file.type == "text/plain":
-            knowledge_text += file.read().decode("utf-8") + "\n\n"
-        elif file.type == "application/pdf":
-            # For PDF processing, you'd use PyPDF2 or similar
-            st.info("📄 PDF processing - implement PyPDF2 integration")
-    
-    # Store in session state (in production, use a proper vector database)
-    st.session_state.knowledge_base = knowledge_text
-    return knowledge_text
-
-def generate_avatar_response(user_input, language, openai_key, elevenlabs_key):
-    """Generate intelligent avatar response with voice and video"""
-    
-    # Set up OpenAI
+def generate_ai_response(user_input, openai_key, language):
+    """Generate intelligent response using OpenAI"""
     openai.api_key = openai_key
     
-    # Search knowledge base if available
-    context = ""
-    if 'knowledge_base' in st.session_state:
-        context = search_knowledge_base(user_input, st.session_state.knowledge_base)
-    
-    # Generate AI response
-    system_prompt = f"""You are a professional AI avatar assistant. 
-    Language preference: {language}
+    system_prompt = f"""You are a professional AI avatar assistant.
+    Language: {language}
     Personality: Polite, professional, helpful
     
-    Knowledge context: {context}
-    
-    Respond naturally and professionally. If responding in Hindi, use proper Devanagari script.
-    Keep responses conversational but informative."""
+    Respond naturally and professionally. Keep responses under 150 words.
+    If language is Hindi, use proper Devanagari script."""
     
     try:
         response = openai.ChatCompletion.create(
@@ -130,48 +122,54 @@ def generate_avatar_response(user_input, language, openai_key, elevenlabs_key):
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_input}
             ],
-            max_tokens=200
+            max_tokens=150
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        return f"I apologize, but I encountered an error: {str(e)}"
+
+def generate_voice_audio(text, elevenlabs_key):
+    """Generate voice audio using ElevenLabs"""
+    try:
+        set_api_key(elevenlabs_key)
+        
+        audio = generate(
+            text=text,
+            voice="Bella",  # Professional voice
+            model="eleven_multilingual_v2"  # Supports Hindi
         )
         
-        ai_response = response.choices[0].message.content
+        # Save audio to temporary file
+        audio_path = f"/tmp/audio_{int(time.time())}.wav"
+        with open(audio_path, "wb") as f:
+            f.write(audio)
         
-        # Generate voice (implement ElevenLabs integration)
-        audio_url = generate_voice(ai_response, elevenlabs_key)
-        
-        # Generate avatar video (implement HeyGen or D-ID integration)
-        video_url = generate_avatar_video(ai_response, audio_url)
-        
-        return {
-            "text": ai_response,
-            "audio_url": audio_url,
-            "video_url": video_url
-        }
+        return audio_path
         
     except Exception as e:
-        return {
-            "text": f"I apologize, but I encountered an error: {str(e)}",
-            "audio_url": None,
-            "video_url": None
-        }
+        st.error(f"Voice generation error: {e}")
+        return None
 
-def search_knowledge_base(query, knowledge_base):
-    """Simple knowledge base search - enhance with vector similarity"""
-    # Basic keyword search (enhance with embeddings later)
-    lines = knowledge_base.split('\n')
-    relevant_lines = [line for line in lines if any(word.lower() in line.lower() for word in query.split())]
-    return '\n'.join(relevant_lines[:3])  # Return top 3 relevant lines
-
-def generate_voice(text, elevenlabs_key):
-    """Generate voice using ElevenLabs API"""
-    # Implement ElevenLabs integration
-    # This is a placeholder - implement actual API call
-    return "placeholder_audio_url"
-
-def generate_avatar_video(text, audio_url):
-    """Generate avatar video using cloud service"""
-    # Implement HeyGen or D-ID integration
-    # This is a placeholder - implement actual API call
-    return "placeholder_video_url"
+def generate_unlimited_avatar_video(text, audio_path, avatar_image_url, colab_url):
+    """Generate UNLIMITED avatar video using Google Colab"""
+    try:
+        # Call your Google Colab API for unlimited generation
+        response = requests.post(f"{colab_url}/generate_avatar", json={
+            "text": text,
+            "audio_url": audio_path,
+            "avatar_image": avatar_image_url
+        }, timeout=120)  # Allow time for generation
+        
+        if response.status_code == 200:
+            result = response.json()
+            if result['status'] == 'success':
+                return f"{colab_url}{result['video_url']}"
+        
+        return None
+        
+    except Exception as e:
+        st.error(f"Unlimited video generation error: {e}")
+        return None
 
 if __name__ == "__main__":
     main()
